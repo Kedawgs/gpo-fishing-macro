@@ -113,11 +113,11 @@ TRACKING_TOLERANCE = 20
 
 # Dead zone - don't change action if within this many pixels
 # Helps prevent oscillation/overshooting
-DEAD_ZONE = 10
+DEAD_ZONE = 20
 
 # Velocity threshold for braking - if moving faster than this, apply brakes
-# Set high to effectively disable braking
-BRAKE_VELOCITY = 50
+# Lower value = more aggressive braking to prevent overshoot
+BRAKE_VELOCITY = 8
 
 # =============================================================================
 # DEBUG SETTINGS

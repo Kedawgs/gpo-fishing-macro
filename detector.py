@@ -36,6 +36,7 @@ class FishingDetector:
         # Store last known positions for smoothing
         self.last_fish_y = None
         self.last_sweet_spot_y = None
+        self.fish_is_green = False  # True when tracking correctly (fish marker is green)
 
         # Velocity tracking for predictive control
         self.prev_sweet_spot_y = None
@@ -62,6 +63,7 @@ class FishingDetector:
     def reset_state(self):
         """Reset all tracking state for a new fish. Call when fishing starts."""
         self.last_fish_y = None
+        self.fish_is_green = False
         # Start at middle of bar (150) - will gradually adjust during warmup
         self.last_sweet_spot_y = 150
         self.prev_sweet_spot_y = None
@@ -120,11 +122,17 @@ class FishingDetector:
         lower_white = np.array(FISH_MARKER_WHITE["lower"], dtype=np.uint8)
         upper_white = np.array(FISH_MARKER_WHITE["upper"], dtype=np.uint8)
         white_mask = cv2.inRange(frame, lower_white, upper_white)
+        white_pixels = cv2.countNonZero(white_mask)
 
         # Detect GREEN fish marker (tracking correctly)
         lower_green = np.array(FISH_MARKER_GREEN["lower"], dtype=np.uint8)
         upper_green = np.array(FISH_MARKER_GREEN["upper"], dtype=np.uint8)
         green_mask = cv2.inRange(frame, lower_green, upper_green)
+        green_pixels = cv2.countNonZero(green_mask)
+
+        # Determine if fish is green (tracking) or white (not tracking)
+        # Green means we're doing well, white means we need to catch up
+        self.fish_is_green = green_pixels > white_pixels
 
         # Combine both masks - fish can be either color
         combined_mask = cv2.bitwise_or(white_mask, green_mask)
@@ -151,7 +159,8 @@ class FishingDetector:
         self.last_fish_y = fish_y
 
         if DEBUG_MODE:
-            print(f"[Detector] Fish Y position: {fish_y} ({fish_pixels} pixels)")
+            color = "GREEN" if self.fish_is_green else "WHITE"
+            print(f"[Detector] Fish Y position: {fish_y} ({fish_pixels} pixels, {color})")
 
         return fish_y
 
@@ -366,42 +375,44 @@ class FishingDetector:
         # During warmup, use smaller dead zone for faster initial response
         active_dead_zone = 5 if is_warmup else DEAD_ZONE
 
+        # Calculate proportional brake distance - brake earlier when moving faster
+        # This prevents overshoot by starting counter-action before reaching target
+        brake_distance = abs(self.sweet_spot_velocity) * 2.5  # Higher multiplier = earlier braking
+
+        # FIRST: Check if we need to brake due to high velocity (regardless of distance)
+        # This prevents overshoot by counter-acting momentum early
+        if not is_warmup and abs(self.sweet_spot_velocity) > BRAKE_VELOCITY:
+            # Moving up fast (negative velocity) - release to brake
+            if self.sweet_spot_velocity < -BRAKE_VELOCITY:
+                if DEBUG_MODE:
+                    print(f"[Detector] VELOCITY BRAKE: moving up fast (v={self.sweet_spot_velocity:.1f}) -> RELEASE")
+                self.is_holding = False
+                return False
+            # Moving down fast (positive velocity) - hold to brake
+            elif self.sweet_spot_velocity > BRAKE_VELOCITY:
+                if DEBUG_MODE:
+                    print(f"[Detector] VELOCITY BRAKE: falling fast (v={self.sweet_spot_velocity:.1f}) -> HOLD")
+                self.is_holding = True
+                return True
+
         # Smart control logic using config values
         # If fish is above (distance negative)
         if distance < -active_dead_zone:
             self.in_dead_zone = False  # Left the dead zone
             # Fish is above - we need to go up (hold)
-            # But if we're already moving up fast, maybe release to slow down
-            # (Skip braking during warmup - react immediately)
-            if not is_warmup and self.sweet_spot_velocity < -BRAKE_VELOCITY and predicted_distance > -DEAD_ZONE:
-                # Moving up fast and will overshoot - release to brake
-                if DEBUG_MODE:
-                    print("[Detector] Moving up fast, releasing to brake")
-                self.is_holding = False
-                return False
-            else:
-                if DEBUG_MODE:
-                    print("[Detector] Fish above -> HOLD")
-                self.is_holding = True
-                return True
+            if DEBUG_MODE:
+                print("[Detector] Fish above -> HOLD")
+            self.is_holding = True
+            return True
 
         # If fish is below (distance positive)
         elif distance > active_dead_zone:
             self.in_dead_zone = False  # Left the dead zone
             # Fish is below - we need to go down (release)
-            # But if we're already falling fast, maybe hold to slow down
-            # (Skip braking during warmup - react immediately)
-            if not is_warmup and self.sweet_spot_velocity > BRAKE_VELOCITY and predicted_distance < DEAD_ZONE:
-                # Falling fast and will overshoot - hold to brake
-                if DEBUG_MODE:
-                    print("[Detector] Falling fast, holding to brake")
-                self.is_holding = True
-                return True
-            else:
-                if DEBUG_MODE:
-                    print("[Detector] Fish below -> RELEASE")
-                self.is_holding = False
-                return False
+            if DEBUG_MODE:
+                print("[Detector] Fish below -> RELEASE")
+            self.is_holding = False
+            return False
 
         # In dead zone - brake first if we were moving, then pulse to maintain
         else:
@@ -420,19 +431,17 @@ class FishingDetector:
                 if DEBUG_MODE:
                     print(f"[Detector] ENTERING dead zone, velocity: {self.sweet_spot_velocity:.1f}")
 
-            # If we have downward velocity (falling), brake first
-            if self.sweet_spot_velocity > 1.5 and self.brake_frames < self.BRAKE_FRAMES_NEEDED:
-                self.brake_frames += 1
+            # If we have downward velocity (falling), brake until stopped
+            if self.sweet_spot_velocity > 3:
                 if DEBUG_MODE:
-                    print(f"[Detector] BRAKING - holding to stop fall ({self.brake_frames}/{self.BRAKE_FRAMES_NEEDED})")
+                    print(f"[Detector] BRAKING - holding to stop fall (v={self.sweet_spot_velocity:.1f})")
                 self.is_holding = True
                 return True
 
             # If we have upward velocity (rising), brake by releasing
-            if self.sweet_spot_velocity < -1.5 and self.brake_frames < self.BRAKE_FRAMES_NEEDED:
-                self.brake_frames += 1
+            if self.sweet_spot_velocity < -3:
                 if DEBUG_MODE:
-                    print(f"[Detector] BRAKING - releasing to stop rise ({self.brake_frames}/{self.BRAKE_FRAMES_NEEDED})")
+                    print(f"[Detector] BRAKING - releasing to stop rise (v={self.sweet_spot_velocity:.1f})")
                 self.is_holding = False
                 return False
 
