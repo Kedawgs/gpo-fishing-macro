@@ -25,6 +25,7 @@ from config import (
     LOOP_DELAY,
     RECAST_DELAY,
     WAIT_FOR_FISH_DELAY,
+    IDLE_TIMEOUT,
     DEBUG_MODE,
     SAVE_DEBUG_SCREENSHOTS,
     SHOW_DEBUG_WINDOW,
@@ -62,6 +63,7 @@ class FishingMacro:
         self.running = True
         self.state = FishingState.IDLE
         self.is_holding = False  # Track current mouse state
+        self.idle_start_time = None  # Track when we started waiting for fish
 
         # Set up hotkeys
         keyboard.on_press_key(TOGGLE_KEY, self._on_toggle)
@@ -88,6 +90,7 @@ class FishingMacro:
         # Reset state when toggling
         if self.enabled:
             self.state = FishingState.IDLE
+            self.idle_start_time = time.time()  # Start idle timer
         else:
             self.mouse.cleanup()
 
@@ -132,13 +135,22 @@ class FishingMacro:
             print("[State] Fish on the line! -> FISHING")
             self.detector.reset_state()  # Reset all tracking state for the new fish
             self.state = FishingState.FISHING
+            self.idle_start_time = None  # Reset idle timer
             # Immediately start holding to prevent bar from falling
             self.mouse.hold()
             self.is_holding = True
         else:
-            # No fish yet - could click to cast if needed
-            # For now, just wait
-            if DEBUG_MODE:
+            # No fish yet - track how long we've been waiting
+            if self.idle_start_time is None:
+                self.idle_start_time = time.time()
+
+            # Check if we've been waiting too long
+            idle_duration = time.time() - self.idle_start_time
+            if idle_duration > IDLE_TIMEOUT:
+                print(f"[State] Idle timeout ({IDLE_TIMEOUT}s) - auto recasting...")
+                self.mouse.click()
+                self.idle_start_time = time.time()  # Reset timer
+            elif DEBUG_MODE:
                 print("[State] Waiting for fish...")
 
     def _handle_fishing(self, frame):
@@ -227,6 +239,7 @@ class FishingMacro:
         # Wait for fish but keep checking - don't just sleep!
         print("[State] -> IDLE (waiting for fish)")
         self.state = FishingState.IDLE
+        self.idle_start_time = time.time()  # Start idle timer
         # Don't sleep here - let the main loop handle detection immediately
 
     def _cleanup(self):

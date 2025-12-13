@@ -81,6 +81,11 @@ RECAST_DELAY = 1.0
 # Fish can take a while to bite - set this high enough
 WAIT_FOR_FISH_DELAY = 10.0
 
+# Auto-recast timeout (in seconds)
+# If waiting for fish longer than this, click to recast
+# Helps recover from stuck states and prevents AFK timeout
+IDLE_TIMEOUT = 30.0
+
 # =============================================================================
 # HOTKEY SETTINGS
 # =============================================================================
