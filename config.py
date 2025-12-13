@@ -99,7 +99,8 @@ EXIT_KEY = "z"
 MIN_FISH_MARKER_PIXELS = 10
 
 # Minimum number of dark pixels to consider fishing bar present
-MIN_BAR_PIXELS = 100
+# Real fishing has 2700+ dark pixels, set threshold high to avoid false positives
+MIN_BAR_PIXELS = 500
 
 # How close the sweet spot needs to be to the fish (in pixels)
 # Smaller = more precise tracking, larger = more forgiving
@@ -118,15 +119,15 @@ BRAKE_VELOCITY = 50
 # =============================================================================
 
 # Show debug output in console (set to False to reduce spam)
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # Show live debug window with visual overlay
 # Displays what the macro sees in real-time
-SHOW_DEBUG_WINDOW = True
+SHOW_DEBUG_WINDOW = False
 
 # Save screenshots when detection fails (for troubleshooting)
 # Set to True to capture frames for debugging
-SAVE_DEBUG_SCREENSHOTS = True
+SAVE_DEBUG_SCREENSHOTS = False
 
 # Gravity compensation - sweet spot falls when mouse released
 # Higher value = more aggressive holding to counteract gravity

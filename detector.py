@@ -102,7 +102,8 @@ class FishingDetector:
 
         # Fishing is active if we have BOTH dark pixels AND blue bar pixels
         # This prevents false positives from dark ocean water
-        return dark_pixel_count > MIN_BAR_PIXELS and blue_pixel_count > 50
+        # Real fishing has 1400+ blue pixels, use high threshold to avoid false positives
+        return dark_pixel_count > MIN_BAR_PIXELS and blue_pixel_count > 300
 
     def get_fish_position(self, frame):
         """
