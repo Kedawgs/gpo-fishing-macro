@@ -16,6 +16,7 @@ Usage:
 
 import time
 import keyboard
+import cv2
 from enum import Enum
 
 from config import (
@@ -26,6 +27,7 @@ from config import (
     WAIT_FOR_FISH_DELAY,
     DEBUG_MODE,
     SAVE_DEBUG_SCREENSHOTS,
+    SHOW_DEBUG_WINDOW,
 )
 from screen_capture import ScreenCapture
 from detector import FishingDetector
@@ -130,6 +132,9 @@ class FishingMacro:
             print("[State] Fish on the line! -> FISHING")
             self.detector.reset_state()  # Reset all tracking state for the new fish
             self.state = FishingState.FISHING
+            # Immediately start holding to prevent bar from falling
+            self.mouse.hold()
+            self.is_holding = True
         else:
             # No fish yet - could click to cast if needed
             # For now, just wait
@@ -165,6 +170,50 @@ class FishingMacro:
             action = "HOLD" if should_hold else "RELEASE" if should_hold is False else "NONE"
             self.debug_capture.save_frame(frame, fish_y, sweet_y, velocity, action, self.is_holding)
 
+        # Show live debug window if enabled
+        if SHOW_DEBUG_WINDOW:
+            self._show_debug_window(frame, should_hold)
+
+    def _show_debug_window(self, frame, should_hold):
+        """Show live debug window with detection overlay."""
+        # Make a copy and scale it up for visibility
+        display = cv2.resize(frame, (frame.shape[1] * 4, frame.shape[0] * 2))
+
+        fish_y = self.detector.last_fish_y
+        sweet_y = self.detector.last_sweet_spot_y
+
+        # Scale Y coordinates to match display size
+        scale_y = 2
+        scale_x = 4
+
+        # Draw fish position (green line)
+        if fish_y is not None:
+            scaled_fish_y = int(fish_y * scale_y)
+            cv2.line(display, (0, scaled_fish_y), (display.shape[1], scaled_fish_y), (0, 255, 0), 2)
+            cv2.putText(display, f"Fish: {fish_y}", (5, scaled_fish_y - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+        # Draw sweet spot position (blue line)
+        if sweet_y is not None:
+            scaled_sweet_y = int(sweet_y * scale_y)
+            cv2.line(display, (0, scaled_sweet_y), (display.shape[1], scaled_sweet_y), (255, 100, 0), 2)
+            cv2.putText(display, f"Sweet: {sweet_y}", (5, scaled_sweet_y + 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 100, 0), 1)
+
+        # Draw action indicator
+        action_text = "HOLD" if should_hold else "RELEASE" if should_hold is False else "???"
+        action_color = (0, 255, 0) if should_hold else (0, 0, 255)
+        cv2.putText(display, action_text, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, action_color, 2)
+
+        # Draw distance if both positions known
+        if fish_y is not None and sweet_y is not None:
+            distance = fish_y - sweet_y
+            cv2.putText(display, f"Dist: {distance}", (5, 40),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+        cv2.imshow("GPO Fishing Debug", display)
+        cv2.waitKey(1)  # Required to update window
+
     def _handle_caught(self, frame):
         """Handle CAUGHT state - recast and return to idle."""
         print("[State] Recasting...")
@@ -175,12 +224,10 @@ class FishingMacro:
         # Click to recast
         self.mouse.click()
 
-        # Wait for the cast animation
-        time.sleep(WAIT_FOR_FISH_DELAY)
-
-        # Back to idle
+        # Wait for fish but keep checking - don't just sleep!
         print("[State] -> IDLE (waiting for fish)")
         self.state = FishingState.IDLE
+        # Don't sleep here - let the main loop handle detection immediately
 
     def _cleanup(self):
         """Clean up resources."""
@@ -189,6 +236,8 @@ class FishingMacro:
         self.capture.close()
         if self.debug_capture:
             self.debug_capture.close()
+        if SHOW_DEBUG_WINDOW:
+            cv2.destroyAllWindows()
         keyboard.unhook_all()
         print("[Macro] Goodbye!")
 

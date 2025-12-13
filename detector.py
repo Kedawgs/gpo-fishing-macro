@@ -62,8 +62,8 @@ class FishingDetector:
     def reset_state(self):
         """Reset all tracking state for a new fish. Call when fishing starts."""
         self.last_fish_y = None
-        # Set to None so first detection is accepted (no filtering on first frame)
-        self.last_sweet_spot_y = None
+        # Start at middle of bar (150) - will gradually adjust during warmup
+        self.last_sweet_spot_y = 150
         self.prev_sweet_spot_y = None
         self.sweet_spot_velocity = 0
         self.is_holding = False
@@ -71,13 +71,13 @@ class FishingDetector:
         self.pulse_counter = 0
         self.in_dead_zone = False
         self.brake_frames = 0
-        # Allow first few frames to stabilize before filtering
-        self.warmup_frames = 5
+        # Allow first few frames to gradually adjust toward real position
+        self.warmup_frames = 10  # More frames to smoothly reach real position
 
     def is_fishing_active(self, frame):
         """
         Check if the fishing minigame is currently active.
-        Looks for the dark fishing bars on screen.
+        Looks for BOTH dark bar background AND blue bar sections.
 
         Args:
             frame: BGR image from screen capture
@@ -85,21 +85,24 @@ class FishingDetector:
         Returns:
             bool: True if fishing bars are visible
         """
-        # Convert color bounds to numpy arrays
-        lower = np.array(BAR_BACKGROUND_COLOR["lower"], dtype=np.uint8)
-        upper = np.array(BAR_BACKGROUND_COLOR["upper"], dtype=np.uint8)
+        # Check for dark pixels (bar background)
+        lower_dark = np.array(BAR_BACKGROUND_COLOR["lower"], dtype=np.uint8)
+        upper_dark = np.array(BAR_BACKGROUND_COLOR["upper"], dtype=np.uint8)
+        dark_mask = cv2.inRange(frame, lower_dark, upper_dark)
+        dark_pixel_count = cv2.countNonZero(dark_mask)
 
-        # Create mask for dark pixels (bar background)
-        mask = cv2.inRange(frame, lower, upper)
-
-        # Count dark pixels
-        dark_pixel_count = cv2.countNonZero(mask)
+        # Also check for blue bar pixels (the cyan/blue sections)
+        lower_blue = np.array(BLUE_BAR_COLOR["lower"], dtype=np.uint8)
+        upper_blue = np.array(BLUE_BAR_COLOR["upper"], dtype=np.uint8)
+        blue_mask = cv2.inRange(frame, lower_blue, upper_blue)
+        blue_pixel_count = cv2.countNonZero(blue_mask)
 
         if DEBUG_MODE:
-            print(f"[Detector] Dark pixels found: {dark_pixel_count}")
+            print(f"[Detector] Dark pixels: {dark_pixel_count}, Blue pixels: {blue_pixel_count}")
 
-        # If we have enough dark pixels, the bar is probably visible
-        return dark_pixel_count > MIN_BAR_PIXELS
+        # Fishing is active if we have BOTH dark pixels AND blue bar pixels
+        # This prevents false positives from dark ocean water
+        return dark_pixel_count > MIN_BAR_PIXELS and blue_pixel_count > 50
 
     def get_fish_position(self, frame):
         """
@@ -209,13 +212,21 @@ class FishingDetector:
         else:
             sweet_spot_y = self.last_sweet_spot_y
 
-        # Validate sweet_spot_y - reject sudden large jumps (likely detection glitches)
-        # But skip filtering during warmup period (first few frames of each fish)
+        # Reject sweet spot detections at extreme edges (false positives from bar edges)
+        # Valid range is roughly 70-250 (bar is about 300px tall)
+        if sweet_spot_y is not None and (sweet_spot_y < 70 or sweet_spot_y > 250):
+            if DEBUG_MODE:
+                print(f"[Detector] REJECTING edge sweet_y={sweet_spot_y} (out of valid range 70-250)")
+            return self.last_sweet_spot_y
+
+        # During warmup, just count down but accept valid detections immediately
         if self.warmup_frames > 0:
             self.warmup_frames -= 1
             if DEBUG_MODE:
-                print(f"[Detector] Warmup frame - accepting sweet_y={sweet_spot_y} (warmup={self.warmup_frames})")
-        elif sweet_spot_y is not None and self.last_sweet_spot_y is not None:
+                print(f"[Detector] Warmup frame {self.warmup_frames}, accepting sweet_y={sweet_spot_y}")
+
+        # Validate sweet_spot_y - reject sudden large jumps (likely detection glitches)
+        if sweet_spot_y is not None and self.last_sweet_spot_y is not None:
             jump = abs(sweet_spot_y - self.last_sweet_spot_y)
             if jump > self.MAX_SWEET_SPOT_JUMP:
                 # Reject this value - likely a detection glitch
@@ -304,9 +315,24 @@ class FishingDetector:
         sweet_spot_y = self.get_sweet_spot_position(frame)
 
         if fish_y is None or sweet_spot_y is None:
+            # Can't detect positions - TAP to maintain middle ground
+            self.pulse_counter += 1
+            should_hold = (self.pulse_counter % 4) < 2  # 2 frames hold, 2 frames release
             if DEBUG_MODE:
-                print("[Detector] Cannot determine - missing position data")
-            return None
+                action = "HOLD" if should_hold else "RELEASE"
+                print(f"[Detector] Cannot detect - TAP to maintain ({action})")
+            self.is_holding = should_hold
+            return should_hold
+
+        # If sweet spot is stuck at reset value (150), detection is failing - TAP
+        if sweet_spot_y == 150 and abs(self.sweet_spot_velocity) < 0.5:
+            self.pulse_counter += 1
+            should_hold = (self.pulse_counter % 4) < 2  # 2 frames hold, 2 frames release
+            if DEBUG_MODE:
+                action = "HOLD" if should_hold else "RELEASE"
+                print(f"[Detector] Sweet spot stuck - TAP to maintain ({action})")
+            self.is_holding = should_hold
+            return should_hold
 
         # Calculate velocity (how fast sweet spot is moving)
         if self.prev_sweet_spot_y is not None:
@@ -378,6 +404,13 @@ class FishingDetector:
 
         # In dead zone - brake first if we were moving, then pulse to maintain
         else:
+            # If sweet spot is near bottom edge, just hold to get it back up (no pulsing)
+            if sweet_spot_y > 250:
+                if DEBUG_MODE:
+                    print(f"[Detector] Near bottom edge ({sweet_spot_y}) - HOLD to recover")
+                self.is_holding = True
+                return True
+
             # Check if we just entered the dead zone
             if not self.in_dead_zone:
                 self.in_dead_zone = True

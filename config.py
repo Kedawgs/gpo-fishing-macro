@@ -120,6 +120,10 @@ BRAKE_VELOCITY = 50
 # Show debug output in console (set to False to reduce spam)
 DEBUG_MODE = True
 
+# Show live debug window with visual overlay
+# Displays what the macro sees in real-time
+SHOW_DEBUG_WINDOW = True
+
 # Save screenshots when detection fails (for troubleshooting)
 # Set to True to capture frames for debugging
 SAVE_DEBUG_SCREENSHOTS = True
