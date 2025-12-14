@@ -113,7 +113,7 @@ class FishingMacro:
         print("=" * 50)
         print("")
         print(f"  {Fore.CYAN}<3 If this macro saved you time, consider supporting:")
-        print("      Venmo: @Daniel-Kehoe-11")
+        print("      Venmo: @Daniel-K-25")
         print(f"      ETH/EVM: 0x3260f49c7df40cfdc550fff88d48d242e67ec5c5{Style.RESET_ALL}")
         print("")
 

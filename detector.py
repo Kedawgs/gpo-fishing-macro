@@ -48,8 +48,8 @@ class FishingDetector:
 
         # Pulse counter for maintaining position in dead zone
         self.pulse_counter = 0
-        self.PULSE_HOLD_FRAMES = 3   # Hold for 3 frames
-        self.PULSE_RELEASE_FRAMES = 3  # Release for 3 frames
+        self.PULSE_HOLD_FRAMES = 2   # Hold for 2 frames (faster tapping)
+        self.PULSE_RELEASE_FRAMES = 2  # Release for 2 frames
 
         # Sweet spot jump filter - reject detection glitches
         self.MAX_SWEET_SPOT_JUMP = 50  # Reject jumps larger than this
@@ -151,9 +151,11 @@ class FishingDetector:
         if coords is None:
             return self.last_fish_y
 
-        # Get the average Y coordinate, adjusted slightly for fish icon center
+        # Get the average Y coordinate, adjusted for fish icon center
+        # White fish icon is taller than green, so needs larger offset
         y_coords = coords[:, 0, 1]
-        fish_y = int(np.mean(y_coords)) - 5  # Offset up slightly to target fish center
+        offset = -8 if self.fish_is_green else -20  # Green is shorter, white is taller
+        fish_y = int(np.mean(y_coords)) + offset
 
         # Update last known position
         self.last_fish_y = fish_y
