@@ -18,6 +18,10 @@ import time
 import keyboard
 import cv2
 from enum import Enum
+from colorama import init, Fore, Style
+
+# Enable ANSI colors on Windows
+init()
 
 from config import (
     TOGGLE_KEY,
@@ -80,6 +84,11 @@ class FishingMacro:
             print("  DEBUG MODE: Saving frames to debug_frames/")
         print("  Status: PAUSED")
         print("=" * 50)
+        print("")
+        print(f"  {Fore.CYAN}<3 If this macro saved you time, consider supporting:")
+        print("      Venmo: @Daniel-Kehoe-11")
+        print(f"      ETH/EVM: 0x3260f49c7df40cfdc550fff88d48d242e67ec5c5{Style.RESET_ALL}")
+        print("")
 
     def _on_toggle(self, event):
         """Handle toggle hotkey press."""
