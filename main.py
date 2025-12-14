@@ -17,6 +17,7 @@ Usage:
 import time
 import keyboard
 import cv2
+import sys
 from enum import Enum
 from colorama import init, Fore, Style
 
@@ -38,6 +39,27 @@ from screen_capture import ScreenCapture
 from detector import FishingDetector
 from mouse_control import MouseController
 from debug_capture import DebugCapture
+
+# Set up logging to file when DEBUG_MODE is on
+if DEBUG_MODE:
+    # Clear old log and set up new one
+    log_file = open('debug.log', 'w')
+
+    class TeeOutput:
+        """Write to both console and file."""
+        def __init__(self, file, stream):
+            self.file = file
+            self.stream = stream
+        def write(self, data):
+            self.stream.write(data)
+            self.file.write(data)
+            self.file.flush()
+        def flush(self):
+            self.stream.flush()
+            self.file.flush()
+
+    sys.stdout = TeeOutput(log_file, sys.stdout)
+    print("[Debug] Logging to debug.log")
 
 
 class FishingState(Enum):

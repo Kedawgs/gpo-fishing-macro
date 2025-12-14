@@ -20,3 +20,4 @@ debug_frames/
 # OS
 .DS_Store
 Thumbs.db
+debug.log

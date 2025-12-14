@@ -223,10 +223,10 @@ class FishingDetector:
             sweet_spot_y = self.last_sweet_spot_y
 
         # Reject sweet spot detections at extreme edges (false positives from bar edges)
-        # Valid range is roughly 70-250 (bar is about 300px tall)
-        if sweet_spot_y is not None and (sweet_spot_y < 70 or sweet_spot_y > 250):
+        # Valid range is roughly 35-260 (bar is about 300px tall)
+        if sweet_spot_y is not None and (sweet_spot_y < 35 or sweet_spot_y > 260):
             if DEBUG_MODE:
-                print(f"[Detector] REJECTING edge sweet_y={sweet_spot_y} (out of valid range 70-250)")
+                print(f"[Detector] REJECTING edge sweet_y={sweet_spot_y} (out of valid range 35-260)")
             return self.last_sweet_spot_y
 
         # During warmup, just count down but accept valid detections immediately
@@ -396,21 +396,25 @@ class FishingDetector:
                 return True
 
         # Smart control logic using config values
+        # Use PREDICTED distance for decisions to brake before reaching target
+        # This prevents overshoot by anticipating where we'll be
+        decision_distance = predicted_distance if abs(self.sweet_spot_velocity) > 2 else distance
+
         # If fish is above (distance negative)
-        if distance < -active_dead_zone:
+        if decision_distance < -active_dead_zone:
             self.in_dead_zone = False  # Left the dead zone
             # Fish is above - we need to go up (hold)
             if DEBUG_MODE:
-                print("[Detector] Fish above -> HOLD")
+                print(f"[Detector] Fish above -> HOLD (dist={distance:.0f}, pred={predicted_distance:.0f})")
             self.is_holding = True
             return True
 
         # If fish is below (distance positive)
-        elif distance > active_dead_zone:
+        elif decision_distance > active_dead_zone:
             self.in_dead_zone = False  # Left the dead zone
             # Fish is below - we need to go down (release)
             if DEBUG_MODE:
-                print("[Detector] Fish below -> RELEASE")
+                print(f"[Detector] Fish below -> RELEASE (dist={distance:.0f}, pred={predicted_distance:.0f})")
             self.is_holding = False
             return False
 
