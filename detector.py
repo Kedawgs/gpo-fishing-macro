@@ -48,8 +48,8 @@ class FishingDetector:
 
         # Pulse counter for maintaining position in dead zone
         self.pulse_counter = 0
-        self.PULSE_HOLD_FRAMES = 2   # Hold for 2 frames (faster tapping)
-        self.PULSE_RELEASE_FRAMES = 2  # Release for 2 frames
+        self.PULSE_HOLD_FRAMES = 5   # Hold for 5 frames (counteracts gravity)
+        self.PULSE_RELEASE_FRAMES = 1  # Release for 1 frame
 
         # Sweet spot jump filter - reject detection glitches
         self.MAX_SWEET_SPOT_JUMP = 50  # Reject jumps larger than this
@@ -225,10 +225,10 @@ class FishingDetector:
             sweet_spot_y = self.last_sweet_spot_y
 
         # Reject sweet spot detections at extreme edges (false positives from bar edges)
-        # Valid range is roughly 70-250 (bar is about 300px tall)
-        if sweet_spot_y is not None and (sweet_spot_y < 70 or sweet_spot_y > 250):
+        # Valid range is roughly 20-280 (bar is about 300px tall) - allow near top/bottom
+        if sweet_spot_y is not None and (sweet_spot_y < 20 or sweet_spot_y > 280):
             if DEBUG_MODE:
-                print(f"[Detector] REJECTING edge sweet_y={sweet_spot_y} (out of valid range 70-250)")
+                print(f"[Detector] REJECTING edge sweet_y={sweet_spot_y} (out of valid range 20-280)")
             return self.last_sweet_spot_y
 
         # During warmup, just count down but accept valid detections immediately
@@ -376,6 +376,23 @@ class FishingDetector:
 
         # During warmup, use smaller dead zone for faster initial response
         active_dead_zone = 5 if is_warmup else DEAD_ZONE
+
+        # BIG JUMP THRESHOLD - if fish is very far, use sustained hold/release
+        # This takes priority over velocity braking to catch fast-moving fish
+        BIG_JUMP_THRESHOLD = 60  # If fish is more than 60 pixels away, force action
+        if abs(distance) > BIG_JUMP_THRESHOLD:
+            if distance < 0:
+                # Fish is far above - HOLD hard to catch up
+                if DEBUG_MODE:
+                    print(f"[Detector] BIG JUMP UP: distance={distance} -> sustained HOLD")
+                self.is_holding = True
+                return True
+            else:
+                # Fish is far below - RELEASE to fall down fast
+                if DEBUG_MODE:
+                    print(f"[Detector] BIG JUMP DOWN: distance={distance} -> sustained RELEASE")
+                self.is_holding = False
+                return False
 
         # Calculate proportional brake distance - brake earlier when moving faster
         # This prevents overshoot by starting counter-action before reaching target
