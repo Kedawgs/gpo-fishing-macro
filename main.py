@@ -95,6 +95,8 @@ class FishingMacro:
         self.state = FishingState.IDLE
         self.is_holding = False  # Track current mouse state
         self.idle_start_time = None  # Track when we started waiting for fish
+        self.consecutive_idle_recasts = 0  # Track idle recasts (for out of bait detection)
+        self.NO_BAIT_THRESHOLD = 7  # After this many idle recasts, assume out of bait
 
         # Set up hotkeys
         keyboard.on_press_key(TOGGLE_KEY, self._on_toggle)
@@ -176,6 +178,7 @@ class FishingMacro:
             self.detector.reset_state()  # Reset all tracking state for the new fish
             self.state = FishingState.FISHING
             self.idle_start_time = None  # Reset idle timer
+            self.consecutive_idle_recasts = 0  # Reset - we got a fish!
             # Immediately start holding to prevent bar from falling
             self.mouse.hold()
             self.is_holding = True
@@ -187,8 +190,17 @@ class FishingMacro:
             # Check if we've been waiting too long
             idle_duration = time.time() - self.idle_start_time
             if idle_duration > IDLE_TIMEOUT:
-                print(f"[State] Idle timeout ({IDLE_TIMEOUT}s) - auto recasting...")
-                self.mouse.click()
+                self.consecutive_idle_recasts += 1
+                print(f"[State] Idle timeout ({IDLE_TIMEOUT}s) - auto recasting... ({self.consecutive_idle_recasts}/{self.NO_BAIT_THRESHOLD})")
+
+                # Check if we've hit the no-bait threshold
+                if self.consecutive_idle_recasts >= self.NO_BAIT_THRESHOLD:
+                    print(f"[State] {Fore.YELLOW}No bait detected! Doing anti-AFK movement...{Style.RESET_ALL}")
+                    self._do_anti_afk()
+                    self.consecutive_idle_recasts = 0  # Reset after anti-AFK
+                else:
+                    self.mouse.click()
+
                 self.idle_start_time = time.time()  # Reset timer
             elif DEBUG_MODE:
                 print("[State] Waiting for fish...")
@@ -294,6 +306,36 @@ class FishingMacro:
         self.state = FishingState.IDLE
         self.idle_start_time = time.time()  # Start idle timer
         # Don't sleep here - let the main loop handle detection immediately
+
+    def _do_anti_afk(self):
+        """Do anti-AFK actions to prevent disconnect when out of bait."""
+        import random
+
+        # Random movement to look more natural
+        movements = ['w', 'a', 's', 'd']
+
+        # Do a few movements
+        for _ in range(3):
+            # Pick a random direction
+            key = random.choice(movements)
+            keyboard.press(key)
+            time.sleep(0.2)
+            keyboard.release(key)
+            time.sleep(0.1)
+
+        # Jump
+        keyboard.press('space')
+        time.sleep(0.1)
+        keyboard.release('space')
+        time.sleep(0.3)
+
+        # One more movement
+        key = random.choice(movements)
+        keyboard.press(key)
+        time.sleep(0.15)
+        keyboard.release(key)
+
+        print("[State] Anti-AFK complete, resuming idle...")
 
     def _cleanup(self):
         """Clean up resources."""

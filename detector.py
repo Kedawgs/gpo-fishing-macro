@@ -153,8 +153,9 @@ class FishingDetector:
 
         # Get the average Y coordinate, adjusted for fish icon center
         # White fish icon is taller than green, so needs larger offset
+        # Larger offset = aim higher (more negative)
         y_coords = coords[:, 0, 1]
-        offset = -8 if self.fish_is_green else -20  # Green is shorter, white is taller
+        offset = -8 if self.fish_is_green else -35  # Green is shorter, white needs bigger offset
         fish_y = int(np.mean(y_coords)) + offset
 
         # Update last known position
@@ -377,20 +378,24 @@ class FishingDetector:
         # During warmup, use smaller dead zone for faster initial response
         active_dead_zone = 5 if is_warmup else DEAD_ZONE
 
-        # BIG JUMP THRESHOLD - if fish is very far, use sustained hold/release
+        # JUMP THRESHOLDS - use sustained hold/release for jumps instead of tapping
         # This takes priority over velocity braking to catch fast-moving fish
-        BIG_JUMP_THRESHOLD = 60  # If fish is more than 60 pixels away, force action
-        if abs(distance) > BIG_JUMP_THRESHOLD:
+        BIG_JUMP_THRESHOLD = 60    # Big jumps - definitely need sustained action
+        MEDIUM_JUMP_THRESHOLD = 30  # Medium jumps - still too big for tapping
+
+        if abs(distance) > MEDIUM_JUMP_THRESHOLD:
             if distance < 0:
-                # Fish is far above - HOLD hard to catch up
+                # Fish is above - HOLD to catch up
                 if DEBUG_MODE:
-                    print(f"[Detector] BIG JUMP UP: distance={distance} -> sustained HOLD")
+                    jump_type = "BIG" if abs(distance) > BIG_JUMP_THRESHOLD else "MEDIUM"
+                    print(f"[Detector] {jump_type} JUMP UP: distance={distance} -> sustained HOLD")
                 self.is_holding = True
                 return True
             else:
-                # Fish is far below - RELEASE to fall down fast
+                # Fish is below - RELEASE to fall down
                 if DEBUG_MODE:
-                    print(f"[Detector] BIG JUMP DOWN: distance={distance} -> sustained RELEASE")
+                    jump_type = "BIG" if abs(distance) > BIG_JUMP_THRESHOLD else "MEDIUM"
+                    print(f"[Detector] {jump_type} JUMP DOWN: distance={distance} -> sustained RELEASE")
                 self.is_holding = False
                 return False
 
@@ -435,10 +440,25 @@ class FishingDetector:
 
         # In dead zone - brake first if we were moving, then pulse to maintain
         else:
-            # If sweet spot is near bottom edge, just hold to get it back up (no pulsing)
-            if sweet_spot_y > 250:
+            # FIRST: Check if fish is green (tracking) at edges - don't pulse, stay steady
+            if self.fish_is_green:
+                # At top edge - just hold steady instead of pulsing
+                if sweet_spot_y < 70:
+                    if DEBUG_MODE:
+                        print(f"[Detector] TOP EDGE + GREEN - steady HOLD (no bounce)")
+                    self.is_holding = True
+                    return True
+                # At bottom edge - just release instead of pulsing
+                if sweet_spot_y > 250:
+                    if DEBUG_MODE:
+                        print(f"[Detector] BOTTOM EDGE + GREEN - steady RELEASE (no bounce)")
+                    self.is_holding = False
+                    return False
+
+            # If fish is WHITE (not tracking) and at bottom edge, hold to recover
+            if not self.fish_is_green and sweet_spot_y > 250:
                 if DEBUG_MODE:
-                    print(f"[Detector] Near bottom edge ({sweet_spot_y}) - HOLD to recover")
+                    print(f"[Detector] BOTTOM EDGE + WHITE - HOLD to recover")
                 self.is_holding = True
                 return True
 
