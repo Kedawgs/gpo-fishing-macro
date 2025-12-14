@@ -283,6 +283,8 @@ class FishingMacro:
         if SHOW_DEBUG_WINDOW:
             cv2.destroyAllWindows()
         keyboard.unhook_all()
+        if DEBUG_MODE:
+            print("[Macro] Debug log saved to: debug.log")
         print("[Macro] Goodbye!")
 
 
