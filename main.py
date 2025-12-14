@@ -34,11 +34,13 @@ from config import (
     DEBUG_MODE,
     SAVE_DEBUG_SCREENSHOTS,
     SHOW_DEBUG_WINDOW,
+    CAPTURE_REGION,
 )
 from screen_capture import ScreenCapture
 from detector import FishingDetector
 from mouse_control import MouseController
 from debug_capture import DebugCapture
+from overlay import FishingOverlay
 
 # Set up logging to file when DEBUG_MODE is on
 if DEBUG_MODE:
@@ -85,6 +87,9 @@ class FishingMacro:
         # Debug capture (if enabled)
         self.debug_capture = DebugCapture() if SAVE_DEBUG_SCREENSHOTS else None
 
+        # Visual overlay on top of game
+        self.overlay = FishingOverlay(CAPTURE_REGION)
+
         self.enabled = False
         self.running = True
         self.state = FishingState.IDLE
@@ -124,6 +129,7 @@ class FishingMacro:
             self.idle_start_time = time.time()  # Start idle timer
         else:
             self.mouse.cleanup()
+            self.overlay.update(is_active=False, status="OFF")
 
     def _on_exit(self, event):
         """Handle exit hotkey press."""
@@ -161,6 +167,9 @@ class FishingMacro:
 
     def _handle_idle(self, frame):
         """Handle IDLE state - waiting for fish."""
+        # Update overlay to show idle state
+        self.overlay.update(is_active=False, status="IDLE")
+
         # Check if fishing minigame started (bars appeared)
         if self.detector.is_fishing_active(frame):
             print("[State] Fish on the line! -> FISHING")
@@ -204,6 +213,18 @@ class FishingMacro:
             self.mouse.release()
             self.is_holding = False
         # If None, keep current state (couldn't determine)
+
+        # Update overlay with current state
+        fish_y = self.detector.last_fish_y
+        sweet_y = self.detector.last_sweet_spot_y
+        action = "HOLD" if should_hold else "RELEASE" if should_hold is False else None
+        self.overlay.update(
+            fish_y=fish_y,
+            sweet_y=sweet_y,
+            is_active=True,
+            status="FISHING",
+            action=action
+        )
 
         # Save debug frame if enabled
         if self.debug_capture:
@@ -259,6 +280,7 @@ class FishingMacro:
 
     def _handle_caught(self, frame):
         """Handle CAUGHT state - recast and return to idle."""
+        self.overlay.update(is_active=False, status="CAUGHT")
         print("[State] Recasting...")
 
         # Wait a moment
@@ -278,6 +300,7 @@ class FishingMacro:
         print("[Macro] Cleaning up...")
         self.mouse.cleanup()
         self.capture.close()
+        self.overlay.close()
         if self.debug_capture:
             self.debug_capture.close()
         if SHOW_DEBUG_WINDOW:
